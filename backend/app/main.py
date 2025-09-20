@@ -7,12 +7,22 @@ import uvicorn
 import os
 
 from .inference import run_inference
+from fastapi.middleware.cors import CORSMiddleware
 
 # --- Config ---
 API_KEY = os.getenv("API_KEY", "mysecretkey")
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 app = FastAPI(title="DeepShield API", version="1.0.0")
+
+# --- Enable CORS ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # allow all for testing, restrict later
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- Auth dependency ---
 async def verify_api_key(api_key: str = Depends(api_key_header)):
