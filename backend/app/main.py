@@ -9,6 +9,12 @@ import os
 from .inference import run_inference
 from fastapi.middleware.cors import CORSMiddleware
 
+
+# Database related models
+from app.models.database import SessionLocal, ScanResult
+import shutil
+import uuid
+
 # --- Config ---
 API_KEY = os.getenv("API_KEY", "mysecretkey")
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
