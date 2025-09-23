@@ -1,3 +1,4 @@
+# main.py
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,11 +10,10 @@ import shutil
 import uuid
 import uvicorn
 
-# --- Import ML inference function ---
-from .inference import run_inference
-
-# --- Database models (placeholder for saving results) ---
 from app.models.database import SessionLocal, ScanResult
+from .inference import run_inference
+from PIL import Image
+import io
 
 # ---------------- CONFIG ----------------
 API_KEY = os.getenv("API_KEY", "mysecretkey")
@@ -21,10 +21,10 @@ api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 app = FastAPI(title="DeepShield API", version="1.0.0")
 
-# --- Enable CORS (allow Flutter app calls) ---
+# --- Enable CORS ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # restrict in prod
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,11 +48,21 @@ class PredictionResponse(BaseModel):
     saved_filename: str
     explanation_path: Optional[str] = None
 
+# ---------------- HELPER ----------------
+async def save_upload_file(file: UploadFile) -> str:
+    upload_dir = "uploads"
+    os.makedirs(upload_dir, exist_ok=True)
+    unique_filename = f"{uuid.uuid4()}_{file.filename}"
+    tmp_path = os.path.join(upload_dir, unique_filename)
+    with open(tmp_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    return tmp_path, unique_filename
+
 # ---------------- ROUTES ----------------
 @app.post("/predict", response_model=PredictionResponse, dependencies=[Depends(verify_api_key)])
 async def predict(file: UploadFile = File(...), metadata: Optional[str] = Form(None)):
 
-    if not file.filename.lower().endswith((".jpg", ".jpeg", ".png", ".mp4", ".avi", ".heic")):
+    if not file.filename.lower().endswith((".jpg", ".jpeg", ".png", ".pdf", ".heic")):
         raise HTTPException(status_code=400, detail="Unsupported file type")
 
     try:
@@ -60,31 +70,31 @@ async def predict(file: UploadFile = File(...), metadata: Optional[str] = Form(N
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid metadata JSON")
 
-    upload_dir = "uploads"
-    os.makedirs(upload_dir, exist_ok=True)
-    unique_filename = f"{uuid.uuid4()}_{file.filename}"
-    tmp_path = os.path.join(upload_dir, unique_filename)
+    try:
+        tmp_path, unique_filename = await save_upload_file(file)
+        start = time.time()
+        label, confidence, model_version, explanation_path = run_inference(tmp_path)
+        elapsed = int((time.time() - start) * 1000)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Inference failed: {e}")
 
-    with open(tmp_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-
-    start = time.time()
-    label, confidence, model_version, explanation_path = run_inference(tmp_path)
-    elapsed = int((time.time() - start) * 1000)
-
-    db = SessionLocal()
-    db_result = ScanResult(
-        filename=unique_filename,
-        label=label,
-        confidence=confidence,
-        model_version=model_version,
-        source=meta.source,
-        user_id=meta.user_id,
-    )
-    db.add(db_result)
-    db.commit()
-    db.refresh(db_result)
-    db.close()
+    # Save results to DB
+    try:
+        db = SessionLocal()
+        db_result = ScanResult(
+            filename=unique_filename,
+            label=label,
+            confidence=confidence,
+            model_version=model_version,
+            source=meta.source,
+            user_id=meta.user_id,
+        )
+        db.add(db_result)
+        db.commit()
+        db.refresh(db_result)
+        db.close()
+    except Exception:
+        pass
 
     return PredictionResponse(
         label=label,
