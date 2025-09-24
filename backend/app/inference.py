@@ -1,4 +1,4 @@
-# inference.py
+# inference.py - DeepShield inference + explainability handler
 import os
 import io
 import base64
@@ -14,25 +14,25 @@ except ImportError:
     pillow_heif = None
 
 # optional: PDF image extraction
-from extract_images import extract_images_from_pdf  # fixed import
+try:
+    from extract_images import extract_images_from_pdf
+except ImportError:
+    extract_images_from_pdf = None
 
 def preprocess_file(file_path: str) -> bytes:
-    """
-    Converts file to valid JPEG bytes for the model.
-    Supports: JPEG, PNG, HEIC, PDF.
-    """
+    """Read and preprocess a file (image/PDF/HEIC) into raw bytes."""
     filename = file_path.lower()
     with open(file_path, "rb") as f:
         content = f.read()
 
-    # PDF: extract first image
+    # PDF
     if filename.endswith(".pdf"):
         if not extract_images_from_pdf:
             raise ValueError("PDF extraction module missing")
         img_bytes_list = extract_images_from_pdf(io.BytesIO(content))
         if not img_bytes_list:
             raise ValueError("No images found in PDF")
-        content = img_bytes_list[0]  # take the first image
+        content = img_bytes_list[0]
 
     # HEIC
     elif filename.endswith(".heic"):
@@ -56,45 +56,59 @@ def preprocess_file(file_path: str) -> bytes:
 
     return content
 
-
 def run_inference(file_path: str) -> Tuple[str, float, str, str]:
     """
-    Run ML inference on the uploaded file using DeepShield model.
-
-    Returns:
-        label (str): "real" or "deepfake"
-        confidence (float)
-        model_version (str)
-        explanation_path (str): saved snapshot path
+    Standard inference (without returning explainability snapshot).
+    Returns: label, confidence, model_version, explanation_path (empty)
     """
     basename = os.path.basename(file_path)
     explanation_path = ""
 
-    # Convert file to valid image bytes
     try:
         file_bytes = preprocess_file(file_path)
+        result = predict_with_explain(file_bytes, filename=basename)
+        label = result.get("label", "unknown")
+        confidence = result.get("confidence", 0.0)
+        model_version = result.get("model_version", "v1.0.0")
     except Exception as e:
+        print(f"[ERROR] Inference failed: {e}")
         return "error", 0.0, "v1.0.0", ""
 
-    # Run prediction with explainability
+    return label, confidence, model_version, explanation_path
+
+
+def run_inference_with_explain(file_path: str) -> Tuple[str, float, str, str]:
+    """
+    Inference + Grad-CAM explainability snapshot.
+    Returns: label, confidence, model_version, explanation_path (JPEG saved file)
+    """
+    basename = os.path.basename(file_path)
+    explanation_path = ""
+
     try:
+        file_bytes = preprocess_file(file_path)
         result = predict_with_explain(file_bytes, filename=basename)
         label = result.get("label", "unknown")
         confidence = result.get("confidence", 0.0)
         model_version = result.get("model_version", "v1.0.0")
         explanation_base64 = result.get("explainability", None)
     except Exception as e:
+        print(f"[ERROR] predict_with_explain failed: {e}")
         return "error", 0.0, "v1.0.0", ""
 
-    # Save Grad-CAM snapshot if available
+    # Save explainability snapshot
     if explanation_base64 and explanation_base64.startswith("data:image"):
         try:
             explanation_dir = "explanations"
             os.makedirs(explanation_dir, exist_ok=True)
-            explanation_path = os.path.join(explanation_dir, f"exp_{basename}.jpg")
+            safe_name = basename.replace(" ", "_")
+            explanation_path = os.path.join(explanation_dir, f"exp_{safe_name}")
+            if not explanation_path.lower().endswith(".jpg"):
+                explanation_path += ".jpg"
             with open(explanation_path, "wb") as f:
                 f.write(base64.b64decode(explanation_base64.split(",")[1]))
-        except Exception:
+        except Exception as e:
+            print(f"[WARNING] Saving explainability snapshot failed: {e}")
             explanation_path = ""
 
     return label, confidence, model_version, explanation_path
