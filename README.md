@@ -51,7 +51,7 @@ Getting Started
  1. Clone Repository
 
 ```bash
-git clone https://github.com/<org_or_user>/DeepShield.git
+git clone https://github.com/BadvaniSecureOps-Pvt-Ltd/DeepShield
 cd DeepShield
 ```
 
