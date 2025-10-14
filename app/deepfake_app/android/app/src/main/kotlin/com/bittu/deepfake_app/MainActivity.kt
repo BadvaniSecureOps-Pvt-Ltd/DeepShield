@@ -1,4 +1,4 @@
-package com.example.deepfake_app
+package com.bittu.deepfake_app
 
 import io.flutter.embedding.android.FlutterActivity
 

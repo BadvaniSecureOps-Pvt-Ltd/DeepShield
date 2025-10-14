@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "835616478717",
+    "project_id": "deepshield-app-bittu",
+    "storage_bucket": "deepshield-app-bittu.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:835616478717:android:04b721ce93791846bc3594",
+        "android_client_info": {
+          "package_name": "com.bittu.deepshield"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC7OboGB9j5MlG3O8svEIjzIG69cTkTSKA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

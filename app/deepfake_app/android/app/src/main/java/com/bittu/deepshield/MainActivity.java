@@ -1,4 +1,4 @@
-package com.example.deepshield;
+package com.bittu.deepshield;
 
 import io.flutter.embedding.android.FlutterActivity;
 
