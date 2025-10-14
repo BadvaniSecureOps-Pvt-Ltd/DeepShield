@@ -1,12 +1,6 @@
 # DeepShield
 Mobile-first Deepfake Detection App (SIH 2025 Project)
-<<<<<<< HEAD
 # Hackathon SIH 2025 Project 
-=======
-Author
-Shaeel Santosh Hasepatil 
-1st Year CSE Student @ IIIT Kottayam 
-2025BCS0133
 =======
 #  DeepShield
 
@@ -168,4 +162,3 @@ This project is licensed under the **MIT License** – see the [LICENSE](LICENSE
 ---
 
  *DeepShield — Building trust in the digital age.*
->>>>>>> origin/flutter-app
