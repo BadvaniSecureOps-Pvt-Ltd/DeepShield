@@ -151,6 +151,94 @@ async def predict(file: UploadFile = File(...), metadata: Optional[str] = Form(N
         explanation_path=explanation_path,
     )
 
+@app.post("/predict_video", response_model=PredictionResponse, dependencies=[Depends(verify_api_key)])
+async def predict_video(file: UploadFile = File(...), metadata: Optional[str] = Form(None)):
+    if not file.filename.lower().endswith((".mp4", ".avi", ".mov", ".mkv")):
+        raise HTTPException(status_code=400, detail="Unsupported video file type")
+
+    try:
+        meta = Metadata.parse_raw(metadata) if metadata else Metadata()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid metadata JSON")
+
+    try:
+        tmp_path, unique_filename = await save_upload_file(file)
+        start = time.time()
+
+        import cv2
+        frames_dir = "video_frames"
+        os.makedirs(frames_dir, exist_ok=True)
+
+        # Extract frames at 1 FPS (or adjust interval as needed)
+        cap = cv2.VideoCapture(tmp_path)
+        fps = int(cap.get(cv2.CAP_PROP_FPS)) or 1
+        frame_interval = max(1, fps)  # 1 frame per second
+        frame_count = 0
+        results = []
+
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            if frame_count % frame_interval == 0:
+                frame_path = os.path.join(frames_dir, f"{uuid.uuid4()}.jpg")
+                cv2.imwrite(frame_path, frame)
+                try:
+                    label, confidence, model_version, explanation_path = run_inference_with_explain(frame_path)
+                    results.append((label, confidence, explanation_path))
+                except Exception as e:
+                    print("Frame inference error:", e)
+            frame_count += 1
+
+        cap.release()
+        if not results:
+            raise HTTPException(status_code=500, detail="No valid frames extracted from video")
+
+        # Aggregate results
+        from collections import Counter
+        labels = [r[0] for r in results]
+        label = Counter(labels).most_common(1)[0][0]
+        avg_conf = sum([r[1] for r in results]) / len(results)
+        explanation_path = results[len(results)//2][2]  # middle frame explanation
+        elapsed = int((time.time() - start) * 1000)
+
+        if explanation_path:
+            explanation_path = os.path.join("explanations", os.path.basename(explanation_path))
+            explanation_path = draw_label_on_image(explanation_path, label)
+            host_ip = get_local_ip()
+            explanation_path = f"http://{host_ip}:8000/explanations/{os.path.basename(explanation_path)}"
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Video inference failed: {e}")
+
+    # Save to DB
+    try:
+        db = SessionLocal()
+        db_result = ScanResult(
+            filename=unique_filename,
+            label=label,
+            confidence=avg_conf,
+            model_version=model_version,
+            source=meta.source,
+            user_id=meta.user_id,
+        )
+        db.add(db_result)
+        db.commit()
+        db.refresh(db_result)
+        db.close()
+    except Exception:
+        pass
+
+    return PredictionResponse(
+        label=label,
+        confidence=avg_conf,
+        model_version=model_version,
+        inference_time_ms=elapsed,
+        saved_filename=unique_filename,
+        explanation_path=explanation_path,
+    )
+
+
 # ---------------- HEALTH CHECK ----------------
 @app.get("/health")
 async def health():
